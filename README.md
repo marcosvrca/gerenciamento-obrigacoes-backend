@@ -4,7 +4,9 @@ API REST em **Spring Boot** para um escritório de contabilidade gerenciar **emp
 
 ## Finalidade deste README
 
-Documentar **somente o backend**: stack, como configurar e executar a API (Docker ou local), estrutura de pacotes, contratos HTTP, regras de negócio, decisões de arquitetura (incluindo UTF-8/utf8mb4 e seed demo) e melhorias futuras. Para visão do sistema completo, use o [README raiz do monorepo](../README.md). Para a UI Flutter, use o [README do frontend](../gerenciamento-obrigacoes-frontend/README.md).
+Documentar **somente o backend**: stack, como configurar e executar a API (Docker ou local), estrutura de pacotes, contratos HTTP, regras de negócio, decisões de arquitetura (incluindo UTF-8/utf8mb4 e seed demo) e melhorias futuras.
+
+**Links relativos** (`../README.md`, frontend) funcionam quando este repo está clonado **dentro** do monorepo `player-contabilidade` (layout do avaliador). Se você clonou só o backend, use as URLs GitHub: [raiz](https://github.com/marcosvrca/player-contabilidade) · [frontend](https://github.com/marcosvrca/gerenciamento-obrigacoes-frontend).
 
 ## Quadro Trello
 
@@ -26,9 +28,8 @@ https://trello.com/b/WFkCNXHG/gerenciamento-de-obrigacoes
 
 ## Pré-requisitos
 
-- JDK 21  
-- Maven 3.9+ (ou `./mvnw` / `mvnw.cmd`)  
-- Docker (recomendado para MySQL e stack completa)
+- **Docker Desktop** instalado e **em execução** (recomendado: API + MySQL via Compose)  
+- JDK 21 e Maven 3.9+ (ou `./mvnw` / `mvnw.cmd`) — só se for rodar a API **localmente** fora do container
 
 ## Configuração do ambiente
 
@@ -61,6 +62,14 @@ Na raiz deste repositório:
 docker compose up --build
 ```
 
+Se o daemon não estiver ativo, abra o Docker Desktop e tente de novo.  
+Se o nome do container já existir (`Conflict ... obrigacoes-mysql` / `obrigacoes-api`):
+
+```bash
+docker rm -f obrigacoes-mysql obrigacoes-api
+docker compose up --build
+```
+
 Serviços:
 
 | Serviço | URL / porta |
@@ -84,15 +93,23 @@ No Windows: `mvnw.cmd spring-boot:run`.
 
 ### Seed de dados demo
 
-Scripts em `scripts/`:
+Scripts em `scripts/` (após MySQL/API saudáveis; container nomeado `obrigacoes-mysql`):
 
 - `seed-demo-data.sql` — ~10 usuários, ~30 empresas, ~60 obrigações (idempotente para CNPJs/e-mails de demo)  
-- `seed-demo-data.ps1` — carrega o SQL no container `obrigacoes-mysql`
+- `seed-demo-data.ps1` — Windows (PowerShell)  
+- `seed-demo-data.sh` — Linux / macOS
 
-**Importante (Windows):** o script usa `docker cp` + `mysql --default-character-set=utf8mb4` e `SOURCE`. Pipar o SQL via PowerShell corrompe acentos (`Fábio` → `F?bio`).
+**Importante:** os scripts usam `docker cp` + `mysql --default-character-set=utf8mb4` e `SOURCE`. Pipar o SQL via shell/PowerShell pode corromper acentos (`Fábio` → `F?bio`).
 
 ```powershell
+# Windows
 .\scripts\seed-demo-data.ps1
+```
+
+```bash
+# Linux / macOS
+chmod +x ./scripts/seed-demo-data.sh
+./scripts/seed-demo-data.sh
 ```
 
 ## Estrutura do projeto
@@ -105,6 +122,7 @@ gerenciamento-obrigacoes-backend/
   scripts/
     seed-demo-data.sql
     seed-demo-data.ps1
+    seed-demo-data.sh
   src/main/java/com/escritorio/obrigacoes/
     domain/          # entidades e enums (status, situação)
     repository/      # Spring Data JPA
@@ -175,7 +193,7 @@ Workflow GitHub Actions (`.github/workflows/ci.yml`) executa `mvn -B verify` em 
 ### Seed demo (decisão recente)
 
 - Dados realistas para demos e UX (listas, paginação, filtros).  
-- Carga via `docker cp` no Windows para preservar bytes UTF-8 do arquivo SQL.
+- Carga via `docker cp` (`seed-demo-data.ps1` / `seed-demo-data.sh`) para preservar bytes UTF-8 do arquivo SQL.
 
 ## Melhorias futuras
 
