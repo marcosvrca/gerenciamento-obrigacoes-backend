@@ -1,41 +1,59 @@
 # Backend — Gerenciamento de Obrigações
 
-API REST em Spring Boot para escritório de contabilidade gerenciar empresas, usuários, obrigações e documentos anexos.
+API REST em **Spring Boot** para um escritório de contabilidade gerenciar **empresas**, **usuários responsáveis**, **obrigações** e **documentos anexos**, com MySQL 8 e armazenamento de arquivos em disco.
+
+## Finalidade deste README
+
+Documentar **somente o backend**: stack, como configurar e executar a API (Docker ou local), estrutura de pacotes, contratos HTTP, regras de negócio, decisões de arquitetura (incluindo UTF-8/utf8mb4 e seed demo) e melhorias futuras. Para visão do sistema completo, use o [README raiz do monorepo](../README.md). Para a UI Flutter, use o [README do frontend](../gerenciamento-obrigacoes-frontend/README.md).
 
 ## Quadro Trello
 
 https://trello.com/b/WFkCNXHG/gerenciamento-de-obrigacoes
 
-## Tecnologias
+## Tecnologias utilizadas
 
-- Java 21
-- Spring Boot 3.4
-- Spring Data JPA + Validation
-- MySQL 8
-- Flyway
-- SpringDoc OpenAPI
-- Testcontainers / JUnit 5
-- Docker / Docker Compose
+| Área | Tecnologia |
+|------|------------|
+| Linguagem / runtime | Java 21 |
+| Framework | Spring Boot 3.4 |
+| Persistência | Spring Data JPA, Hibernate, Bean Validation |
+| Banco | MySQL 8 (`utf8mb4` / `utf8mb4_unicode_ci`) |
+| Migrações | Flyway (`ddl-auto=validate`) |
+| API docs | SpringDoc OpenAPI (Swagger UI) |
+| Testes | JUnit 5, Testcontainers (MySQL) |
+| Empacotamento | Maven Wrapper, Docker, Docker Compose |
+| Upload | Multipart (limite configurável), filesystem |
 
 ## Pré-requisitos
 
-- JDK 21
-- Maven 3.9+
-- Docker (recomendado para MySQL e execução completa)
+- JDK 21  
+- Maven 3.9+ (ou `./mvnw` / `mvnw.cmd`)  
+- Docker (recomendado para MySQL e stack completa)
 
 ## Configuração do ambiente
 
-Variáveis principais (`application.yml`):
+Variáveis principais (`src/main/resources/application.yml` e/ou Compose):
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/obrigacoes...` | JDBC |
+| `SPRING_DATASOURCE_URL` | JDBC local com `createDatabaseIfNotExist`, `useUnicode=true`, `characterEncoding=UTF-8`, `connectionCollation=utf8mb4_unicode_ci`, `characterSetResults=UTF-8` | Conexão MySQL |
 | `SPRING_DATASOURCE_USERNAME` | `obrigacoes` | Usuário DB |
 | `SPRING_DATASOURCE_PASSWORD` | `obrigacoes` | Senha DB |
 | `STORAGE_PATH` | `./uploads` | Pasta de anexos |
 | `SERVER_PORT` | `8080` | Porta HTTP |
+| `JAVA_TOOL_OPTIONS` | (Compose) `-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8` | Encoding da JVM no container |
 
-## Execução com Docker Compose
+Encoding HTTP (servlet):
+
+- `server.servlet.encoding.charset=UTF-8`  
+- `force` / `force-request` / `force-response` habilitados  
+- `EncodingConfig` reforça `CharacterEncodingFilter` e JSON em UTF-8  
+
+MySQL no Compose sobe com `--character-set-server=utf8mb4` e `--collation-server=utf8mb4_unicode_ci`. A migration **V5** garante database/tabelas em utf8mb4.
+
+## Instruções de execução
+
+### Docker Compose (API + MySQL)
 
 Na raiz deste repositório:
 
@@ -45,74 +63,146 @@ docker compose up --build
 
 Serviços:
 
-- API: http://localhost:8080
-- Swagger UI: http://localhost:8080/swagger-ui.html
-- MySQL: localhost:3306
+| Serviço | URL / porta |
+|---------|-------------|
+| API | http://localhost:8080 |
+| Swagger UI | http://localhost:8080/swagger-ui.html |
+| OpenAPI JSON | http://localhost:8080/api-docs |
+| MySQL | `localhost:3306` |
 
-As migrations Flyway rodam automaticamente na inicialização da API.
+Flyway aplica as migrations na subida da API.
 
-## Execução local (sem Docker da API)
-
-1. Suba apenas o MySQL (`docker compose up mysql`)
-2. Configure `JAVA_HOME` para JDK 21
-3. Execute:
+### API local (MySQL no Docker)
 
 ```bash
+docker compose up mysql
+# JAVA_HOME = JDK 21
 ./mvnw spring-boot:run
+```
+
+No Windows: `mvnw.cmd spring-boot:run`.
+
+### Seed de dados demo
+
+Scripts em `scripts/`:
+
+- `seed-demo-data.sql` — ~10 usuários, ~30 empresas, ~60 obrigações (idempotente para CNPJs/e-mails de demo)  
+- `seed-demo-data.ps1` — carrega o SQL no container `obrigacoes-mysql`
+
+**Importante (Windows):** o script usa `docker cp` + `mysql --default-character-set=utf8mb4` e `SOURCE`. Pipar o SQL via PowerShell corrompe acentos (`Fábio` → `F?bio`).
+
+```powershell
+.\scripts\seed-demo-data.ps1
 ```
 
 ## Estrutura do projeto
 
 ```
-src/main/java/com/escritorio/obrigacoes
-  domain/       # entidades e enums
-  repository/   # JPA
-  service/      # regras de negócio
-  web/          # controllers + DTOs
-  exception/    # handler global
-  config/       # CORS, storage, OpenAPI
-src/main/resources/db/migration  # Flyway
+gerenciamento-obrigacoes-backend/
+  docker-compose.yml
+  Dockerfile
+  pom.xml
+  scripts/
+    seed-demo-data.sql
+    seed-demo-data.ps1
+  src/main/java/com/escritorio/obrigacoes/
+    domain/          # entidades e enums (status, situação)
+    repository/      # Spring Data JPA
+    service/         # regras de negócio
+    web/             # controllers + DTOs
+    exception/       # handler global + erros de domínio
+    config/          # CORS, storage, OpenAPI, EncodingConfig
+  src/main/resources/
+    application.yml
+    db/migration/    # Flyway V1…V5 (inclui utf8mb4)
+  src/test/          # unitários + integração Testcontainers
+  .github/workflows/ci.yml
 ```
 
 ## Principais endpoints
 
-- `GET/POST /api/empresas`, `GET/PUT /api/empresas/{id}`
-- `GET/POST /api/usuarios`, `GET/PUT /api/usuarios/{id}`
-- `GET/POST /api/obrigacoes`, `GET/PUT /api/obrigacoes/{id}`
-- `PATCH /api/obrigacoes/{id}/status`
-- `POST/GET /api/obrigacoes/{id}/anexos`
-- `GET /api/anexos/{id}/download`
+| Recurso | Métodos |
+|---------|---------|
+| Empresas | `GET/POST /api/empresas`, `GET/PUT /api/empresas/{id}` |
+| Usuários | `GET/POST /api/usuarios`, `GET/PUT /api/usuarios/{id}` |
+| Obrigações | `GET/POST /api/obrigacoes`, `GET/PUT /api/obrigacoes/{id}` |
+| Status | `PATCH /api/obrigacoes/{id}/status` |
+| Anexos | `POST/GET /api/obrigacoes/{id}/anexos`, `GET /api/anexos/{id}/download` |
+
+Contratos detalhados: Swagger UI após subir a API.
 
 ## Regras de negócio
 
-- Situação Ativo/Inativo: registros inativos permanecem consultáveis, mas não podem ser usados em novas atribuições
-- Status da obrigação: apenas `PENDENTE → EM_ANDAMENTO → CONCLUIDA`
-- Obrigação concluída não pode ter status alterado nem ser editada
+- **Situação Ativo/Inativo:** inativos permanecem consultáveis; não entram em novas atribuições de obrigação.  
+- **Status da obrigação:** apenas `PENDENTE → EM_ANDAMENTO → CONCLUIDA`.  
+- **Concluída:** não altera status nem aceita edição de dados.  
+- **Anexos:** associados a uma obrigação **já persistida** (upload após criação).
 
 ## Testes
 
 ```bash
-mvn -B verify
+./mvnw -B verify
 ```
 
-Inclui testes unitários de domínio/serviço e integração com Testcontainers (MySQL).
+Inclui testes de domínio/serviço e integração com Testcontainers (MySQL). O CI usa Testcontainers compatível com Docker Engine recente.
 
 ## CI/CD
 
-Workflow GitHub Actions em `.github/workflows/ci.yml` executa `mvn -B verify`.
+Workflow GitHub Actions (`.github/workflows/ci.yml`) executa `mvn -B verify` em push/PR.
 
 ## Decisões arquiteturais
 
-- Camadas Controller → Service → Repository
-- Validação via Bean Validation nos DTOs
-- Exceções de domínio mapeadas por `@RestControllerAdvice`
-- Persistência de anexos em filesystem (volume Docker)
-- Flyway com `ddl-auto=validate` para evolução controlada do schema
+### Camadas e API
+
+- Separação **Controller → Service → Repository**.  
+- DTOs com Bean Validation; erros de domínio via `@RestControllerAdvice`.  
+- OpenAPI para descoberta e validação manual dos contratos.  
+- CORS liberado para consumo pelo app Flutter em desenvolvimento.
+
+### Persistência e schema
+
+- Flyway como fonte de verdade do schema; Hibernate em `validate`.  
+- Anexos no **filesystem** (`STORAGE_PATH`), metadados no banco — simples de operar com volume Docker.  
+- Multipart com limites explícitos (20MB arquivo / 25MB request).
+
+### UTF-8 / utf8mb4 (decisão recente)
+
+- JDBC com `characterEncoding=UTF-8` e `connectionCollation=utf8mb4_unicode_ci`.  
+- Servlet encoding forçado em request/response.  
+- MySQL server + migration **V5** em utf8mb4.  
+- Objetivo: gravar e ler corretamente cedilha, til e demais acentos.
+
+### Seed demo (decisão recente)
+
+- Dados realistas para demos e UX (listas, paginação, filtros).  
+- Carga via `docker cp` no Windows para preservar bytes UTF-8 do arquivo SQL.
 
 ## Melhorias futuras
 
-- Autenticação/autorização (JWT)
-- Storage em object storage (S3)
-- Soft delete explícito e auditoria
-- Paginação e filtros avançados
-- Notificações de prazo
+### Identidade, acesso e dados
+
+- **Auth + RBAC** — login, cadastro de usuários da aplicação e papéis (ex.: admin vs. responsável), protegendo endpoints.  
+- **Escopo por usuário** — listagens e alertas filtrados pelo vínculo do responsável (admin vê tudo).  
+- **Paginação e filtros na API** — page/size, status, empresa, prazo; hoje a UI pagina em memória.  
+- **Auditoria** — histórico de mudança de status e, se útil, soft delete.
+
+### Alertas e canais
+
+- **Central de alertas** — eventos por obrigação (criação, status, prazo) persistidos e consultáveis por usuário.  
+- **E-mail** — worker/fila para disparos, respeitando preferências do usuário (quais tipos receber: novas obrigações criadas, a vencer, do dia, da semana).  
+- **Integrações** — webhooks ou conectores configuráveis (sistemas externos; WhatsApp Business API quando houver conta/provedor).
+
+### Domínio contábil
+
+- **Regras de prazo** — classificação automática a vencer / vencida.  
+- **Obrigações recorrentes** — geração por competência a partir de modelos.  
+- **Exportação** — endpoints ou jobs para CSV/PDF gerencial.  
+- **Anexos em object storage** (S3) e retenção configurável.
+
+### Plataforma
+
+- Secrets e perfis staging/prod; métricas, health rico e tracing.
+
+## Relação com o frontend
+
+O app Flutter consome esta API em `http://localhost:8080` por padrão. Ver [README do frontend](../gerenciamento-obrigacoes-frontend/README.md) e o [README raiz](../README.md).
